@@ -15,7 +15,7 @@ RST             D9           D8
 
 
 #define DEBUG
-
+#define MFRC522_SPICLOCK (1500000u)  // 1MHz for long cables
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Servo.h>
@@ -24,33 +24,30 @@ Servo myservo;
 
 const int numReaders = 3;
 const int ssPins[] = {2, 3, 4};
-const int resetPin = 8;
+const int resetPins[] = {29, 33, 34};
 
-const int LED_crvena_napred = 6;
-const int LED_zelena_napred = 7;
-const int LED_crvena_iza = 9;
-const int LED_zelena_iza = 10;
+const int LED_napred = 23;
+const int LED_iza = 22;
 
 const int servo = 5;
-int pos = 0;
+int pos = 90;
+// pos-max: 120; pos-min: 90
 
 MFRC522 mfrc522[numReaders];
 
 const String correctIDs[][2] = {
-  {"19f495", "left"},
-  {"b96b75", "forward-right"},
-  {"c39b75", "forward-left"},
-  {"bac463", "right"},
-  {"a7a3c91", "forward-left"},
-  {"f11ece1", "forward-right"}
+  {"62eeca6", "left"},
+  {"e653116", "right"},
+  {"7a95c96", "left"},
+  {"553b156", "right"},
+  {"126ec96", "left"},
+  {"57df116", "forward-right"}
 };
 
 int numGroups = sizeof(correctIDs) / sizeof(correctIDs[0]);
 int broj_grupe = 0;
 
 String currentIDs[numReaders];
-String trenutniID = "";
-String sljedeciID = "";
 
 void setup() {
   #ifdef DEBUG
@@ -64,7 +61,8 @@ void setup() {
 
   for(int i = 0; i < numReaders; i++)
   {
-    mfrc522[i].PCD_Init(ssPins[i], resetPin);
+    mfrc522[i].PCD_Init(ssPins[i], resetPins[i]);
+    mfrc522[i].PCD_SetAntennaGain(MFRC522::PCD_RxGain::RxGain_max);
 
     Serial.print(F("Reader #"));
     Serial.print(i);
@@ -75,30 +73,28 @@ void setup() {
     Serial.print(F(". Version: "));
     mfrc522[i].PCD_DumpVersionToSerial();
 
-    delay(100);
+    digitalWrite(resetPins[i], HIGH);
+    delay(200);
   }
 
   Serial.println(F("--- END SETUP ---"));
 
-  pinMode(LED_crvena_napred, OUTPUT);
-  digitalWrite(LED_crvena_napred, LOW);
-  pinMode(LED_zelena_napred, OUTPUT);
-  digitalWrite(LED_zelena_napred, HIGH);
-  pinMode(LED_crvena_iza, OUTPUT);
-  digitalWrite(LED_crvena_iza, LOW);
-  pinMode(LED_zelena_iza, OUTPUT);
-  digitalWrite(LED_zelena_iza, HIGH);
+  pinMode(LED_napred, OUTPUT);
+  digitalWrite(LED_napred, HIGH);
+  pinMode(LED_iza, OUTPUT);
+  digitalWrite(LED_iza, HIGH);
 
   myservo.attach(servo);
-  myservo.write(pos);
-  
+  myservo.write(pos);  
 }
 
 void loop() {
   
   for (int i = 0; i < numReaders; i++)
   {
+    activateReader(i);
     mfrc522[i].PCD_Init();
+    mfrc522[i].PCD_SetAntennaGain(MFRC522::PCD_RxGain::RxGain_max);
     String readRFID = "";
 
     if (mfrc522[i].PICC_IsNewCardPresent() && mfrc522[i].PICC_ReadCardSerial())
@@ -113,6 +109,9 @@ void loop() {
 
     mfrc522[i].PICC_HaltA();
     mfrc522[i].PCD_StopCrypto1();
+    deactivateAll();
+
+    delay(200);
   }
 
   for (int i = 0; i < numReaders; i++)
@@ -130,35 +129,29 @@ void loop() {
 
   while (broj_grupe < numGroups)
   {
-    if (correctIDs[broj_grupe][1] == "left" && currentIDs[0] == correctIDs[broj_grupe][0])
-    {
-      broj_grupe++;
-      idi_lijevo();
-      pali_zel_gasi_crv_napred();
-      while (true)
-      {
-        if(mfrc522[2].PICC_IsNewCardPresent() && mfrc522[2].PICC_ReadCardSerial())
-        {
-          pali_crv_gasi_zel_napred();
-          break;
-        }
-        else { break; }
-      }
-      break;
-    }
-    else if (correctIDs[broj_grupe][1] == "right" && currentIDs[0] == correctIDs[broj_grupe][0])
+    if (correctIDs[broj_grupe][1] == "right" && currentIDs[0] == correctIDs[broj_grupe][0])
     {
       broj_grupe++;
       idi_desno();
-      pali_zel_gasi_crv_napred();
+      digitalWrite(LED_napred, LOW);
       while (true)
       {
-        if(mfrc522[1].PICC_IsNewCardPresent() && mfrc522[1].PICC_ReadCardSerial())
-        {
-          pali_crv_gasi_zel_napred();
-          break;
-        }
-        else { break; }
+        delay(4500);
+        digitalWrite(LED_napred, HIGH);
+        break;
+      }
+      break;
+    }
+    else if (correctIDs[broj_grupe][1] == "left" && currentIDs[0] == correctIDs[broj_grupe][0])
+    {
+      broj_grupe++;
+      idi_lijevo();
+      digitalWrite(LED_napred, LOW);
+      while (true)
+      {
+        delay(4500);
+        digitalWrite(LED_napred, HIGH);
+        break;
       }
       break;
     }
@@ -166,15 +159,25 @@ void loop() {
     {
       broj_grupe++;
       idi_desno();
-      pali_zel_gasi_crv_iza();
+      digitalWrite(LED_iza, LOW);
       while (true)
       {
         if(mfrc522[0].PICC_IsNewCardPresent() && mfrc522[0].PICC_ReadCardSerial())
         {
-          pali_crv_gasi_zel_iza();
+          currentIDs[0] = dump_byte_array(mfrc522[0].uid.uidByte, mfrc522[0].uid.size);
+
+          Serial.print(F("Reader #"));
+          Serial.print(String(1));
+          Serial.print(F(" on Pin #"));
+          Serial.print(String(ssPins[0]));
+          Serial.print(F(" detected tag: "));
+          Serial.print({currentIDs[0]});
+          Serial.println("");
+
+          
+          digitalWrite(LED_iza, HIGH);
           break;
         }
-        else { break; }
       }
       break;
     }
@@ -182,15 +185,25 @@ void loop() {
     {
       broj_grupe++;
       idi_lijevo();
-      pali_zel_gasi_crv_iza();
+      digitalWrite(LED_iza, LOW);
       while (true)
       {
         if(mfrc522[0].PICC_IsNewCardPresent() && mfrc522[0].PICC_ReadCardSerial())
         {
-          pali_crv_gasi_zel_iza();
+          currentIDs[0] = dump_byte_array(mfrc522[0].uid.uidByte, mfrc522[0].uid.size);
+
+          Serial.print(F("Reader #"));
+          Serial.print(String(1));
+          Serial.print(F(" on Pin #"));
+          Serial.print(String(ssPins[0]));
+          Serial.print(F(" detected tag: "));
+          Serial.print({currentIDs[0]});
+          Serial.println("");
+
+          
+          digitalWrite(LED_iza, HIGH);
           break;
         }
-        else { break; }
       }
       break;
     }
@@ -208,32 +221,27 @@ String dump_byte_array(byte *buffer, byte bufferSize) {
     return output;
 }
 
-void pali_zel_gasi_crv_napred() {
-  digitalWrite(LED_crvena_napred, HIGH);
-  digitalWrite(LED_zelena_napred, LOW);
+void activateReader(int index) {
+  for (int i = 0; i < numReaders; i++){
+    digitalWrite(resetPins[i], LOW); //disable
+  }
+
+  digitalWrite(resetPins[index], HIGH); //activate
+  delay(50);
 }
 
-void pali_zel_gasi_crv_iza() {
-  digitalWrite(LED_crvena_iza, HIGH);
-  digitalWrite(LED_zelena_iza, LOW);
-}
-
-void pali_crv_gasi_zel_napred() {
-  digitalWrite(LED_crvena_napred, LOW);
-  digitalWrite(LED_zelena_napred, HIGH);
-}
-
-void pali_crv_gasi_zel_iza() {
-  digitalWrite(LED_crvena_iza, LOW);
-  digitalWrite(LED_zelena_iza, HIGH);
+void deactivateAll() {
+  for (int i = 0; i < numReaders; i++) {
+    digitalWrite(resetPins[i], LOW);
+  }
 }
 
 void idi_desno() {
-  pos = 0;
+  pos = 90;
   myservo.write(pos);
 }
 
 void idi_lijevo() {
-  pos = 180;
+  pos = 120;
   myservo.write(pos);
 }
