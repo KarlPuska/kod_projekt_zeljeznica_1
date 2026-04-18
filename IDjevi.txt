@@ -1,6 +1,0 @@
-  {"19f495", "left"},
-  {"b96b75", "forward-right"},
-  {"c39b75", "forward-left"},
-  {"bac463", "right"},
-  {"a7a3c91", "forward-left"},
-  {"f11ece1", "forward-right"}
